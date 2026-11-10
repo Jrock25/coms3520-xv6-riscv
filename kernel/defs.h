@@ -66,6 +66,8 @@ void            initlog(int, struct superblock*);
 void            log_write(struct buf*);
 void            begin_op(void);
 void            end_op(void);
+void            log_nice_change(int, int);
+void            log_scheduler_dispatch(int, uint);
 
 // pipe.c
 int             pipealloc(struct file**, struct file**);
@@ -87,6 +89,7 @@ void            proc_mapstacks(pagetable_t);
 pagetable_t     proc_pagetable(struct proc *);
 void            proc_freepagetable(pagetable_t, uint64);
 int             kkill(int);
+int             knice(int, int);
 int             killed(struct proc*);
 void            setkilled(struct proc*);
 struct cpu*     mycpu(void);
@@ -143,6 +146,7 @@ extern uint     ticks;
 void            trapinit(void);
 void            trapinithart(void);
 extern struct spinlock tickslock;
+extern uint ticks;
 void            prepare_return(void);
 
 // uart.c

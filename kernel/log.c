@@ -47,6 +47,8 @@ struct log {
   struct logheader lh;
 };
 struct log log;
+static struct spinlock logging_lock;
+static int logging_enabled;
 
 static void recover_from_log(void);
 static void commit();
@@ -58,6 +60,8 @@ initlog(int dev, struct superblock *sb)
     panic("initlog: too big logheader");
 
   initlock(&log.lock, "log");
+  initlock(&logging_lock, "logging");
+  logging_enabled = 0;
   log.start = sb->logstart;
   log.dev = dev;
   recover_from_log();
@@ -241,6 +245,49 @@ log_write(struct buf *b)
     log.lh.n++;
   }
   release(&log.lock);
+
+  acquire(&logging_lock);
+  if (logging_enabled)
+    printk("Logging block %d\n", b->blockno);
+  release(&logging_lock);
+}
+
+uint64
+sys_startlogging(void)
+{
+  acquire(&logging_lock);
+  logging_enabled = 1;
+  printk("Logging Started\n");
+  release(&logging_lock);
+  return 0;
+}
+
+uint64
+sys_stopLogging(void)
+{
+  acquire(&logging_lock);
+  logging_enabled = 0;
+  printk("Logging Stopped\n");
+  release(&logging_lock);
+  return 0;
+}
+
+void
+log_nice_change(int pid, int value)
+{
+  acquire(&logging_lock);
+  if (logging_enabled)
+    printk("nice set to %d for %d\n", value, pid);
+  release(&logging_lock);
+}
+
+void
+log_scheduler_dispatch(int pid, uint timestamp)
+{
+  acquire(&logging_lock);
+  if (logging_enabled)
+    printk("running %d at %u\n", pid, timestamp);
+  release(&logging_lock);
 }
 
 uint64

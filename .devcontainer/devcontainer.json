@@ -3,7 +3,7 @@
 {
 	"name": "COM S 3520 Ubuntu xv6-riscv",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	//"image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04"
+	// "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04"
 	"build": {
 		"dockerfile": "Dockerfile"
 	}

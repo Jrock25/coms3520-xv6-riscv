@@ -1,3 +1,5 @@
+// Jayden Sorter
+
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -7,10 +9,12 @@
 #include "defs.h"
 
 struct cpu cpus[NCPU];
-
 struct proc proc[NPROC];
 
 struct proc *initproc;
+
+static struct spinlock scheduler_lock;
+static int scheduler_cursor;
 
 int nextpid = 1;
 struct spinlock pid_lock;
@@ -51,6 +55,8 @@ procinit(void)
 
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
+  initlock(&scheduler_lock, "scheduler");
+  scheduler_cursor = NPROC - 1;
   for (p = proc; p < &proc[NPROC]; p++) {
     initlock(&p->lock, "proc");
     p->state = UNUSED;
@@ -123,6 +129,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  p->nice = 0;
   p->state = USED;
 
   // Allocate a trapframe page.
@@ -163,6 +170,7 @@ freeproc(struct proc *p)
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
+  p->nice = 0;
   p->name[0] = 0;
   p->chan = 0;
   p->killed = 0;
@@ -429,7 +437,9 @@ void
 scheduler(void)
 {
   struct proc *p;
+  struct proc *best;
   struct cpu *c = mycpu();
+  uint dispatch_ticks;
 
   c->proc = 0;
   for (;;) {
@@ -441,28 +451,52 @@ scheduler(void)
     intr_on();
     intr_off();
 
-    int found = 0;
-    for (p = proc; p < &proc[NPROC]; p++) {
+    acquire(&tickslock);
+    dispatch_ticks = ticks;
+    release(&tickslock);
+
+    int best_index = -1;
+    int best_nice = 20;
+
+    acquire(&scheduler_lock);
+    for (p = proc; p < &proc[NPROC]; p++)
       acquire(&p->lock);
-      if (p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
 
-        // Don't re-enable interrupts on release.
-        mycpu()->intena = 0;
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+    for (int offset = 1; offset <= NPROC; offset++) {
+      int index = (scheduler_cursor + offset) % NPROC;
+      p = &proc[index];
+      if (p->state == RUNNABLE &&
+          (best_index < 0 || p->nice < best_nice)) {
+        best_index = index;
+        best_nice = p->nice;
       }
-      release(&p->lock);
     }
-    if (found == 0) {
+
+    if (best_index >= 0) {
+      best = &proc[best_index];
+      best->state = RUNNING;
+      c->proc = best;
+      scheduler_cursor = best_index;
+      for (p = proc; p < &proc[NPROC]; p++) {
+        if (p != best)
+          release(&p->lock);
+      }
+      release(&scheduler_lock);
+
+      // Keep best->lock held across the context switch.
+      log_scheduler_dispatch(best->pid, dispatch_ticks);
+      swtch(&c->context, &best->context);
+
+      // Don't re-enable interrupts on release.
+      mycpu()->intena = 0;
+
+      // The process changed state before switching back.
+      c->proc = 0;
+      release(&best->lock);
+    } else {
+      for (p = proc; p < &proc[NPROC]; p++)
+        release(&p->lock);
+      release(&scheduler_lock);
       // nothing to run; stop running on this core until an interrupt.
       asm volatile("wfi");
     }
@@ -617,6 +651,33 @@ kkill(int pid)
     release(&p->lock);
   }
   return -1;
+}
+
+int
+knice(int pid, int inc)
+{
+  struct proc *p;
+
+  if (pid <= 0)
+    return 0;
+
+  for (p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if (p->state != UNUSED && p->pid == pid) {
+      long updated = (long)p->nice + (long)inc;
+      if (updated < -20)
+        updated = -20;
+      if (updated > 19)
+        updated = 19;
+      p->nice = (int)updated;
+      int result = p->nice;
+      release(&p->lock);
+      log_nice_change(pid, result);
+      return result;
+    }
+    release(&p->lock);
+  }
+  return 0;
 }
 
 void

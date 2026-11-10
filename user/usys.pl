@@ -43,3 +43,6 @@ entry("sbrk");
 entry("pause");
 entry("uptime");
 entry("sync");
+entry("startlogging");
+entry("stopLogging");
+entry("nice");
