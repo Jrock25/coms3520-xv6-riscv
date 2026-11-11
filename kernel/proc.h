@@ -110,6 +110,7 @@ struct proc {
   // in policy_proc_init() in policy.c.
   int qticks; // ticks used in the current quantum
   int level;  // queue level, for multi-level policies
+  int start_level; // queue selected from nice, for MLFQ boosts
   int used;   // ticks used at the current level (allotment)
   uint64 vrt; // weighted CPU usage, for fair-share policies
 
